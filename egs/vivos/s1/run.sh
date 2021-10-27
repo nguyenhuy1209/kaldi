@@ -9,17 +9,29 @@
 # general configuration
 stage=1           # start from 1 to download VIVOS corpus
 stop_stage=10
-use_noise_aug=true
 
 # data
 datadir=./data
 vivos_root=${datadir}/vivos
 vivos_aug=${datadir}/vivos_aug
-noise_path=noise/xe34.wav
+vivos_sp=${datadir}/vivos_sp
+vivos_ps=${datadir}/vivos_ps
+working_data_dir=${vivos_root}
 data_url=https://ailab.hcmus.edu.vn/assets/vivos.tar.gz
 
+# Noise augumentation related
+use_noise_aug=true
+noise_aug_rate=0.9
+noise_path=noise/xe34.wav
+
 # Speed perturbation related
-# speed_perturb_factors="0.9 1.0 1.1"  # perturbation factors, e.g. "0.9 1.0 1.1" (separated by space).
+use_sp=true
+speed_perturb_factors=0.5
+
+# Pitch shifting related
+use_ps=true
+pitch_shifting_step=3
+pitch_shifting_bop=12
 
 # exp tag
 tag=""
@@ -49,8 +61,9 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
                     --audio_folder_path ${vivos_root}/$x       \
                     --noise_path ${noise_path}          \
                     --output_folder_path ${vivos_aug}/$x       \
-                    --alpha 0.9
+                    --alpha ${noise_aug_rate}
             done
+            working_data_dir=${vivos_aug}
         fi
     else
         echo "Skipping noise augumentation..."
@@ -58,7 +71,46 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
 fi
 
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
-    echo "stage 3: Data preparation"
+    echo "Stage 3: Speed perturbation"
+    if [ ${use_sp} == true ]; then 
+        if [ -d $vivos_sp ]; then
+            echo "$0: speed perturbation directory already exists in $vivos_aug"
+        else
+            for x in test train; do
+                python3 local/speed_perturbation.py             \
+                    --audio_folder_path ${working_data_dir}/$x  \
+                    --output_folder_path ${vivos_sp}/$x         \
+                    --rate ${speed_perturb_factors}             
+            done
+            working_data_dir=${vivos_sp}
+        fi
+    else
+        echo "Skipping speed perturbation..."
+    fi
+fi
+
+if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
+    echo "Stage 4: Pitch shifting"
+    if [ ${use_ps} == true ]; then 
+        if [ -d $vivos_ps ]; then
+            echo "$0: pitch shifting directory already exists in $vivos_aug"
+        else
+            for x in test train; do
+                python3 local/pitch_shift.py             \
+                    --audio_folder_path ${working_data_dir}/$x  \
+                    --output_folder_path ${vivos_ps}/$x         \
+                    --n_steps ${pitch_shifting_step}            \
+                    --bins_per_octave ${pitch_shifting_bop}         
+            done
+            working_data_dir=${vivos_ps}
+        fi
+    else
+        echo "Skipping pitch shifting..."
+    fi
+fi
+
+if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
+    echo "stage 5: Data preparation"
 
     mkdir -p data/{train,test} exp
 
@@ -69,7 +121,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     
     for x in test train; do
         if [ ${use_noise_aug} == true ]; then
-            awk -v dir=${vivos_aug}/$x '{ split($1,args,"_"); spk=args[1]; print $1" "dir"/waves/"spk"/"$1".wav" }' ${vivos_root}/$x/prompts.txt | sort > data/$x/wav.scp
+            awk -v dir=${working_data_dir}/$x '{ split($1,args,"_"); spk=args[1]; print $1" "dir"/waves/"spk"/"$1".wav" }' ${vivos_root}/$x/prompts.txt | sort > data/$x/wav.scp
         else
             awk -v dir=${vivos_root}/$x '{ split($1,args,"_"); spk=args[1]; print $1" "dir"/waves/"spk"/"$1".wav" }' ${vivos_root}/$x/prompts.txt | sort > data/$x/wav.scp
         fi
@@ -79,20 +131,3 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     done
 fi
 
-# if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
-#     if [ -n "${speed_perturb_factors}" ]; then
-#         echo "Stage 4: Speed perturbation: ${datadir}/train -> ${datadir}/train_sp"
-#         for factor in ${speed_perturb_factors}; do
-#             if [[ $(bc <<<"${factor} != 1.0") == 1 ]]; then
-#                 utils/perturb_data_dir_speed.sh "${factor}" "${datadir}/train" "${datadir}/train_sp${factor}"
-#                 _dirs+="${datadir}/train_sp${factor} "
-#             else
-#                 # If speed factor is 1, same as the original
-#                 _dirs+="${datadir}/train "
-#             fi
-#         done
-#         utils/combine_data.sh "${datadir}/train_sp" ${_dirs}
-#     else
-#         log "Skip stage 4: Speed perturbation"
-#     fi
-# fi
