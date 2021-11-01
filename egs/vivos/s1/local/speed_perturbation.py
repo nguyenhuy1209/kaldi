@@ -2,6 +2,10 @@ import argparse
 import librosa
 import os
 import soundfile as sf
+import threading
+import time
+
+NUM_THREADS = 4
 
 if __name__ == '__main__':
     """
@@ -35,21 +39,41 @@ if __name__ == '__main__':
 
     # Create directory
     os.makedirs(output_folder_path, exist_ok=True)
+
+    spk_list = os.listdir(os.path.join(audio_folder_path, 'waves'))
+    spk_per_thread = int(len(spk_list) / NUM_THREADS)
+
+    def speed_perturabate_job(thread_index):
+        if thread_index == NUM_THREADS - 1:
+            thread_spk_list = spk_list[thread_index*spk_per_thread:]
+        else:
+            thread_spk_list = spk_list[thread_index*spk_per_thread: \
+                                            thread_index*spk_per_thread+spk_per_thread]
+
+        for spk in thread_spk_list:
+            apath = os.path.join(audio_folder_path, 'waves', spk)
+            opath = os.path.join(output_folder_path, 'waves', spk)
+            os.makedirs(opath, exist_ok=True)
+
+            for f in os.listdir(apath):
+                audio_path = os.path.join(apath, f)
+                output_path = os.path.join(opath, f)
+
+                # Read audio file
+                audio, sr = librosa.load(audio_path, sr=16000)
+
+                # Perturbating sound
+                audio_perb = librosa.effects.time_stretch(audio, rate)
+
+                # Export perturbated audio file
+                sf.write(output_path, audio_perb, 16000, 'PCM_16')
     
-    for spk in os.listdir(os.path.join(audio_folder_path, 'waves')):
-        apath = os.path.join(audio_folder_path, 'waves', spk)
-        opath = os.path.join(output_folder_path, 'waves', spk)
-        os.makedirs(opath, exist_ok=True)
-
-        for f in os.listdir(apath):
-            audio_path = os.path.join(apath, f)
-            output_path = os.path.join(opath, f)
-
-            # Read audio file
-            audio, sr = librosa.load(audio_path, sr=16000)
-
-            # Perturbating sound
-            audio_perb = librosa.effects.time_stretch(audio, rate)
-
-            # Export perturbated audio file
-            sf.write(output_path, audio_perb, 16000, 'PCM_16')
+    thread_list = list()
+    start_time = time.time()
+    for i in range(NUM_THREADS):
+        thread = threading.Thread(target=speed_perturabate_job, args=(i,))
+        thread_list.append(thread)
+        thread.start()
+    for thread in thread_list:
+        thread.join()
+    print(f"Finished, time: {time.time() - start_time}")

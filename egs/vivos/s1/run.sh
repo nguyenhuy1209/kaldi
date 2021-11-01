@@ -13,25 +13,25 @@ stop_stage=10
 # data
 datadir=./data
 vivos_root=${datadir}/vivos
-vivos_aug=${datadir}/vivos_aug
-vivos_sp=${datadir}/vivos_sp
-vivos_ps=${datadir}/vivos_ps
 working_data_dir=${vivos_root}
 data_url=https://ailab.hcmus.edu.vn/assets/vivos.tar.gz
 
 # Noise augumentation related
 use_noise_aug=true
 noise_aug_rate=0.9
-noise_path=noise/xe34.wav
+noise_path=noise/xe3.wav
+vivos_aug=${datadir}/vivos_aug
 
 # Speed perturbation related
 use_sp=true
 speed_perturb_factors=0.5
+vivos_sp=${datadir}/vivos_sp_${speed_perturb_factors}
 
 # Pitch shifting related
 use_ps=true
 pitch_shifting_step=3
 pitch_shifting_bop=12
+vivos_ps=${datadir}/vivos_ps_${pitch_shifting_step}_${pitch_shifting_bop}
 
 # exp tag
 tag=""
@@ -63,34 +63,15 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
                     --output_folder_path ${vivos_aug}/$x       \
                     --alpha ${noise_aug_rate}
             done
-            working_data_dir=${vivos_aug}
         fi
+        working_data_dir=${vivos_aug}
     else
         echo "Skipping noise augumentation..."
     fi
 fi
 
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
-    echo "Stage 3: Speed perturbation"
-    if [ ${use_sp} == true ]; then 
-        if [ -d $vivos_sp ]; then
-            echo "$0: speed perturbation directory already exists in $vivos_aug"
-        else
-            for x in test train; do
-                python3 local/speed_perturbation.py             \
-                    --audio_folder_path ${working_data_dir}/$x  \
-                    --output_folder_path ${vivos_sp}/$x         \
-                    --rate ${speed_perturb_factors}             
-            done
-            working_data_dir=${vivos_sp}
-        fi
-    else
-        echo "Skipping speed perturbation..."
-    fi
-fi
-
-if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
-    echo "Stage 4: Pitch shifting"
+    echo "Stage 3: Pitch shifting"
     if [ ${use_ps} == true ]; then 
         if [ -d $vivos_ps ]; then
             echo "$0: pitch shifting directory already exists in $vivos_aug"
@@ -102,10 +83,29 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
                     --n_steps ${pitch_shifting_step}            \
                     --bins_per_octave ${pitch_shifting_bop}         
             done
-            working_data_dir=${vivos_ps}
         fi
+        working_data_dir=${vivos_ps}
     else
         echo "Skipping pitch shifting..."
+    fi
+fi
+
+if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
+    echo "Stage 4: Speed perturbation"
+    if [ ${use_sp} == true ]; then 
+        if [ -d $vivos_sp ]; then
+            echo "$0: speed perturbation directory already exists in $vivos_aug"
+        else
+            for x in test train; do
+                python3 local/speed_perturbation.py             \
+                    --audio_folder_path ${working_data_dir}/$x  \
+                    --output_folder_path ${vivos_sp}/$x         \
+                    --rate ${speed_perturb_factors}             
+            done  
+        fi
+        working_data_dir=${vivos_sp}
+    else
+        echo "Skipping speed perturbation..."
     fi
 fi
 
